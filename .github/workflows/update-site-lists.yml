@@ -26,6 +26,7 @@ jobs:
         run: pip install --quiet openpyxl==3.1.5
 
       # The share links live in repository secrets so they are not published in the repo.
+      # SharePoint anonymous links set a guest cookie on redirect, so curl needs a cookie jar (-c/-b) or it gets 403.
       - name: Download and convert Centers sheet
         env:
           CENTERS_XLSX_URL: ${{ secrets.CENTERS_XLSX_URL }}
@@ -34,7 +35,7 @@ jobs:
           if [ -z "${CENTERS_XLSX_URL:-}" ]; then
             echo "::error::Repository secret CENTERS_XLSX_URL is not set."; exit 1
           fi
-          curl -sSfL --retry 3 --max-time 120 -o "$RUNNER_TEMP/centers.xlsx" "$CENTERS_XLSX_URL" \
+          curl -sSfL --retry 3 --max-time 120 -c "$RUNNER_TEMP/cj-centers" -b "$RUNNER_TEMP/cj-centers" -o "$RUNNER_TEMP/centers.xlsx" "$CENTERS_XLSX_URL" \
             || { echo "::error::Could not download the Centers sheet (link revoked or SharePoint error)."; exit 1; }
           # Writes data/centers.json only if the download is a valid xlsx with the expected columns.
           python scripts/convert_sites.py "$RUNNER_TEMP/centers.xlsx" data/centers.json \
@@ -49,7 +50,7 @@ jobs:
           if [ -z "${HOMES_XLSX_URL:-}" ]; then
             echo "HOMES_XLSX_URL is not set; skipping the Homes list."; exit 0
           fi
-          curl -sSfL --retry 3 --max-time 120 -o "$RUNNER_TEMP/homes.xlsx" "$HOMES_XLSX_URL" \
+          curl -sSfL --retry 3 --max-time 120 -c "$RUNNER_TEMP/cj-homes" -b "$RUNNER_TEMP/cj-homes" -o "$RUNNER_TEMP/homes.xlsx" "$HOMES_XLSX_URL" \
             || { echo "::error::Could not download the Homes sheet (link revoked, org-only, or SharePoint error)."; exit 1; }
           python scripts/convert_sites.py "$RUNNER_TEMP/homes.xlsx" data/homes.json \
             --key homes --min-rows 1 --require name --source-name "Day Care Home contact sheet"
