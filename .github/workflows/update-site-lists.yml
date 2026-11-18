@@ -1,0 +1,70 @@
+name: Update site lists
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # every 6 hours (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-site-lists
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install openpyxl
+        run: pip install --quiet openpyxl==3.1.5
+
+      # The share links live in repository secrets so they are not published in the repo.
+      - name: Download and convert Centers sheet
+        env:
+          CENTERS_XLSX_URL: ${{ secrets.CENTERS_XLSX_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CENTERS_XLSX_URL:-}" ]; then
+            echo "::error::Repository secret CENTERS_XLSX_URL is not set."; exit 1
+          fi
+          curl -sSfL --retry 3 --max-time 120 -o "$RUNNER_TEMP/centers.xlsx" "$CENTERS_XLSX_URL" \
+            || { echo "::error::Could not download the Centers sheet (link revoked or SharePoint error)."; exit 1; }
+          # Writes data/centers.json only if the download is a valid xlsx with the expected columns.
+          python scripts/convert_sites.py "$RUNNER_TEMP/centers.xlsx" data/centers.json \
+            --key centers --min-rows 10 --require name,license,capacity,email \
+            --source-name "Center Contact Information.xlsx"
+
+      - name: Download and convert Homes sheet (skipped until HOMES_XLSX_URL is set)
+        env:
+          HOMES_XLSX_URL: ${{ secrets.HOMES_XLSX_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMES_XLSX_URL:-}" ]; then
+            echo "HOMES_XLSX_URL is not set; skipping the Homes list."; exit 0
+          fi
+          curl -sSfL --retry 3 --max-time 120 -o "$RUNNER_TEMP/homes.xlsx" "$HOMES_XLSX_URL" \
+            || { echo "::error::Could not download the Homes sheet (link revoked, org-only, or SharePoint error)."; exit 1; }
+          python scripts/convert_sites.py "$RUNNER_TEMP/homes.xlsx" data/homes.json \
+            --key homes --min-rows 1 --require name --source-name "Day Care Home contact sheet"
+
+      - name: Refresh offline copies embedded in index.html
+        run: python scripts/embed_sites.py index.html
+
+      - name: Commit if anything changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data index.html; then
+            echo "Site lists unchanged; nothing to commit."; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data index.html
+          git commit -m "Update site lists from SharePoint"
+          git push
