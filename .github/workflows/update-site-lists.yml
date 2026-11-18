@@ -53,7 +53,7 @@ jobs:
           curl -sSfL --retry 3 --max-time 120 -c "$RUNNER_TEMP/cj-homes" -b "$RUNNER_TEMP/cj-homes" -o "$RUNNER_TEMP/homes.xlsx" "$HOMES_XLSX_URL" \
             || { echo "::error::Could not download the Homes sheet (link revoked, org-only, or SharePoint error)."; exit 1; }
           python scripts/convert_sites.py "$RUNNER_TEMP/homes.xlsx" data/homes.json \
-            --key homes --min-rows 1 --require name --source-name "Day Care Home contact sheet"
+            --key homes --min-rows 10 --require name,license,capacity --source-name "Homes - Contacts"
 
       - name: Refresh offline copies embedded in index.html
         run: python scripts/embed_sites.py index.html
